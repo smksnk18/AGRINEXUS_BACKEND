@@ -20,7 +20,7 @@ client = MongoClient(
     os.getenv("MONGO_URI")
 )
 
-db = client["agrinexus"]
+db = client["AGRINEXUS"]
 
 # ==========================
 # Government API
