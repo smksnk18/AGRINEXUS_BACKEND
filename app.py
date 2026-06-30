@@ -157,7 +157,11 @@ def health():
         "status": "online",
         "database": db_status
     })
-
+@app.route("/routes")
+def routes():
+    return {
+        "routes": sorted([str(rule) for rule in app.url_map.iter_rules()])
+    }
 
 # ==========================
 # REGISTER
