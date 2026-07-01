@@ -374,55 +374,60 @@ def get_states():
 # ==========================
 @app.route("/api/districts")
 def get_districts():
-    state_id = to_object_id(request.args.get("state_id"))
+    state_id = request.args.get("state_id")
 
-    if state_id is None:
+    if not state_id:
         return jsonify({
             "success": False,
-            "message": "Valid state_id is required"
+            "message": "state_id is required"
         }), 400
 
-    districts = list(db.districts.find({"state_id": state_id}))
+    districts = list(db.districts.find({
+        "state_id": state_id
+    }))
+
     return jsonify([serialize_doc(d) for d in districts])
-
-
 # ==========================
 # TALUKAS
 # ==========================
 @app.route("/api/talukas")
 def get_talukas():
-    district_id = to_object_id(request.args.get("district_id"))
+    district_id = request.args.get("district_id")
 
-    if district_id is None:
+    if not district_id:
         return jsonify({
             "success": False,
-            "message": "Valid district_id is required"
+            "message": "district_id is required"
         }), 400
 
-    talukas = list(db.talukas.find({"district_id": district_id}))
+    talukas = list(db.talukas.find({
+        "district_id": district_id
+    }))
+
     return jsonify([serialize_doc(t) for t in talukas])
-
-
 # ==========================
 # PADDY VARIETIES
 # ==========================
 @app.route("/api/crops/paddy")
 def get_paddy_varieties():
-    state_id = to_object_id(request.args.get("state_id"))
-    district_id = to_object_id(request.args.get("district_id"))
-    taluka_id = to_object_id(request.args.get("taluka_id"))
+    state_id = request.args.get("state_id")
+    district_id = request.args.get("district_id")
+    taluka_id = request.args.get("taluka_id")
 
     query = {}
+
     if state_id:
         query["state_id"] = state_id
+
     if district_id:
         query["district_id"] = district_id
+
     if taluka_id:
         query["taluka_id"] = taluka_id
 
     crops = list(db.paddy_varieties.find(query))
-    return jsonify([serialize_doc(c) for c in crops])
 
+    return jsonify([serialize_doc(c) for c in crops])
 
 # ==========================
 # DISEASE RISK ENGINE
@@ -455,6 +460,7 @@ def disease_risk():
             })
 
     return jsonify(risks)
+
 
 
 # ==========================
