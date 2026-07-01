@@ -9,6 +9,7 @@ from pymongo.errors import PyMongoError
 from bson import ObjectId
 from bson.errors import InvalidId
 import os
+import bcrypt
 from datetime import datetime
 
 # ==========================
@@ -157,11 +158,7 @@ def health():
         "status": "online",
         "database": db_status
     })
-@app.route("/routes")
-def routes():
-    return {
-        "routes": sorted([str(rule) for rule in app.url_map.iter_rules()])
-    }
+
 
 # ==========================
 # REGISTER
@@ -183,12 +180,18 @@ def register():
     data = request.get_json(silent=True) or {}
     print("REQUEST DATA :", data)
 
-    required_fields = ["name", "role"]
+    required_fields = ["name", "role", "password"]
     missing = [f for f in required_fields if not data.get(f)]
     if missing:
         return jsonify({
             "success": False,
             "message": f"Missing required fields: {', '.join(missing)}"
+        }), 400
+
+    if len(data["password"]) < 6:
+        return jsonify({
+            "success": False,
+            "message": "Password must be at least 6 characters"
         }), 400
 
     try:
@@ -206,11 +209,18 @@ def register():
                 "message": "User already registered"
             }), 409
 
+        # Hash the password before storing — never store plain text
+        hashed_pw = bcrypt.hashpw(
+            data["password"].encode("utf-8"),
+            bcrypt.gensalt()
+        )
+
         user = {
             "firebase_uid": uid,
             "phone": phone,
             "name": data.get("name"),
             "role": data.get("role"),
+            "password": hashed_pw,
             "village": data.get("village"),
             "taluk": data.get("taluk"),
             "district": data.get("district"),
@@ -238,21 +248,26 @@ def register():
 
 
 # ==========================
-# LOGIN
+# LOGIN (phone + password — no OTP)
 # ==========================
 @app.route("/api/login", methods=["POST"])
 def login():
     print("\n========== LOGIN API HIT ==========")
 
-    decoded, error = verify_token(request)
-    if error:
-        return error
+    data = request.get_json(silent=True) or {}
+    phone = data.get("phone", "").strip()
+    password = data.get("password", "")
 
-    uid = decoded["uid"]
-    print("Firebase UID :", uid)
+    print("Phone:", phone)
+
+    if not phone or not password:
+        return jsonify({
+            "success": False,
+            "message": "Phone and password are required"
+        }), 400
 
     try:
-        user = users.find_one({"firebase_uid": uid})
+        user = users.find_one({"phone": phone})
     except PyMongoError as e:
         print("DATABASE ERROR (login):", e)
         return jsonify({
@@ -261,17 +276,31 @@ def login():
         }), 500
 
     if user is None:
-        print("USER NOT REGISTERED")
+        print("USER NOT FOUND")
         return jsonify({
-            "success": True,
-            "registered": False
-        })
+            "success": False,
+            "message": "No account found with this phone number. Please register first."
+        }), 404
+
+    # Verify password against stored bcrypt hash
+    stored_hash = user.get("password")
+    if not stored_hash:
+        return jsonify({
+            "success": False,
+            "message": "Account has no password set. Please re-register."
+        }), 400
+
+    if not bcrypt.checkpw(password.encode("utf-8"), stored_hash):
+        print("WRONG PASSWORD")
+        return jsonify({
+            "success": False,
+            "message": "Incorrect password"
+        }), 401
 
     print("LOGIN SUCCESS")
     return jsonify({
         "success": True,
         "registered": True,
-        "firebase_uid": user["firebase_uid"],
         "phone": user["phone"],
         "name": user["name"],
         "role": user["role"],
@@ -345,60 +374,55 @@ def get_states():
 # ==========================
 @app.route("/api/districts")
 def get_districts():
-    state_id = request.args.get("state_id")
+    state_id = to_object_id(request.args.get("state_id"))
 
-    if not state_id:
+    if state_id is None:
         return jsonify({
             "success": False,
-            "message": "state_id is required"
+            "message": "Valid state_id is required"
         }), 400
 
-    districts = list(db.districts.find({
-        "state_id": state_id
-    }))
-
+    districts = list(db.districts.find({"state_id": state_id}))
     return jsonify([serialize_doc(d) for d in districts])
+
+
 # ==========================
 # TALUKAS
 # ==========================
 @app.route("/api/talukas")
 def get_talukas():
-    district_id = request.args.get("district_id")
+    district_id = to_object_id(request.args.get("district_id"))
 
-    if not district_id:
+    if district_id is None:
         return jsonify({
             "success": False,
-            "message": "district_id is required"
+            "message": "Valid district_id is required"
         }), 400
 
-    talukas = list(db.talukas.find({
-        "district_id": district_id
-    }))
-
+    talukas = list(db.talukas.find({"district_id": district_id}))
     return jsonify([serialize_doc(t) for t in talukas])
+
+
 # ==========================
 # PADDY VARIETIES
 # ==========================
 @app.route("/api/crops/paddy")
 def get_paddy_varieties():
-    state_id = request.args.get("state_id")
-    district_id = request.args.get("district_id")
-    taluka_id = request.args.get("taluka_id")
+    state_id = to_object_id(request.args.get("state_id"))
+    district_id = to_object_id(request.args.get("district_id"))
+    taluka_id = to_object_id(request.args.get("taluka_id"))
 
     query = {}
-
     if state_id:
         query["state_id"] = state_id
-
     if district_id:
         query["district_id"] = district_id
-
     if taluka_id:
         query["taluka_id"] = taluka_id
 
     crops = list(db.paddy_varieties.find(query))
-
     return jsonify([serialize_doc(c) for c in crops])
+
 
 # ==========================
 # DISEASE RISK ENGINE
